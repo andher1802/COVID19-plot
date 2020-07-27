@@ -1,0 +1,244 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Austria	16-03-2020
+Belgium	18-03-2020
+Estonia	27-03-2020
+Finland	25-03-2020
+France	17-03-2020
+Iceland	NA
+Italy	11-03-2020
+Japan	NA
+Malaysia	16-03-2020
+South Africa	26-03-2020
+South Korea	NA
+United Kingdom	24-03-2020
+
+```{r}
+library(lubridate)
+library(tidyverse)
+library(foreign)
+library(spdep)
+library(RColorBrewer)
+library(reshape)
+library(ggthemes)
+library(grid)
+library(plyr)
+```
+
+```{r}
+country <- "United Kingdom"
+datecountry <- "2020-03-29" # Change dates according to the dates above
+lockdownDate<-"2020-03-24" # Change dates according to table
+filanmesummary <- paste("./Summary/", country, "_results.csv", sep = "")
+```
+
+```{r}
+filenameconfirmed <- paste("./confirmed_cases/confirmed_", datecountry,"_",country, "_results_series.csv", sep="")
+
+con1<-read.csv(filenameconfirmed)
+con2 <- read.csv(filanmesummary)
+con2 <- con2 %>% select(dates,deaths,recovered,confirmed,cumulated)
+
+startindex <- con1[!is.na(con1$cum.response),1][1]
+startDate <- as.character(con1[startindex-1,2])
+
+
+con3 <- merge(con1,con2,by.x="datesnames",by.y="dates")
+con3$day <- ymd(as.character(con3$datesnames))
+
+con3$expcumresponse<-exp(con3$cum.response)*con3$confirmed[con3$datesnames==startDate]
+con3$exp.cr.ll<-exp(con3$cum.pred.lower)*con3$confirmed[con3$datesnames==startDate]
+con3$exp.cr.uu<-exp(con3$cum.pred.upper)*con3$confirmed[con3$datesnames==startDate]
+
+# se eleva al exponente cum.pred
+con3$expcumpred <- exp(con3$cum.pred)*con3$confirmed[con3$datesnames==startDate]
+con3$expcumresponse[con3$day<startDate] <- con3$confirmed[con3$day<startDate]
+con3$expcumpred[con3$day<startDate] <- con3$confirmed[con3$day<startDate]
+
+# reshape to rows
+bmelt <- con3 %>% select(X,day,expcumresponse,expcumpred)
+bmelt <- melt(bmelt, id=c("X","day"))
+
+colnames(bmelt)<-c("X","day","type","value")
+
+bmelt$type<-as.factor(
+  revalue(
+    as.character(bmelt$type),
+    c(
+      "expcumresponse" = "Observed",
+      "expcumpred" = "Estimated")
+    )
+  )
+
+mmax1<-max(bmelt$value[bmelt$type=="Observed"],na.rm = T)
+mmax2<-max(bmelt$value[bmelt$type=="Estimated"],na.rm=T)  # for linear
+mmax3<-max(con3$exp.cr.uu,na.rm=T)  # for log 
+
+ybrks<-c(
+  min(bmelt$value[bmelt$type=="Observed"]),
+  mmax1,
+  mmax2
+  )
+
+obsColor<-rgb(124,228,187,maxColorValue = 255)
+```
+
+# Log confirmed cases
+```{r}
+p<-ggplot(data=bmelt)+
+  geom_smooth(aes(x=day,y=value,colour=type),size=0.8,se=F,method = "gam")+
+  # geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=round(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=round(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  
+  geom_ribbon(
+    data=con3,
+    aes(
+      x=day, 
+      y=expcumresponse, 
+      ymin=exp.cr.ll,
+      ymax=exp.cr.uu
+      ),
+    alpha=0.1) +
+  labs(
+    title=country,
+    y ="", 
+    x = "",
+    color="" ) +
+  # vline
+  geom_vline(
+    xintercept = as.numeric(ymd(lockdownDate)), 
+    linetype="dashed", 
+    color = "grey50", 
+    size=0.7
+    ) +
+  # minor grid
+  scale_x_date(
+    minor_breaks = c(
+                        bmelt$day[1],
+                        (ymd(lockdownDate)),
+                        (bmelt$day[length(bmelt$day)])),
+    breaks = c( 
+                        bmelt$day[1],
+                        (ymd(lockdownDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               ) +
+    scale_y_log10(
+      minor_breaks=ybrks,
+      breaks = round(ybrks)
+      ) +
+    theme(
+      plot.margin = unit(c(1,1,2,1), 
+      "cm"
+      ),
+    panel.background = NULL
+    ) +
+    annotate(
+      geom="text", 
+      x=ymd(lockdownDate) + 3.5, 
+      y=mmax3, 
+      label="lockdown",
+      color="grey50"
+      )
+
+ggsave(filename = paste(country, "LogConfirmed.png"), p, width = 8, height = 4, dpi = 300, units = "in", device='png')
+
+a <- round(con3[length(con3$expcumpred), 25], 3)
+b <- round(con3[length(con3$expcumpred), 23], 3)
+c <- round(con3[length(con3$expcumpred), 24], 3)
+d <- paste(a, " CI: 95%", b, " - ", c, sep = "")
+e <- round(con3[length(con3$expcumpred), 22], 3)
+
+country
+e
+d
+p
+```
+
+```{r}
+filenamecummulated <- paste("./cumulated_cases/cumulated_", datecountry,"_",country, "_results_series.csv", sep="")
+con5<-read.csv(filenamecummulated)
+con2 <- read.csv(filanmesummary)
+con2 <- con2 %>% select(dates,deaths,recovered,confirmed,cumulated)
+
+con4<-merge(con5,con2,by.x="datesnames",by.y="dates")
+con4$day<-ymd(as.character(con4$datesnames))
+
+con4$expcumresponse<-exp(con4$cum.response)*con4$cumulated[con4$datesnames==startDate]
+con4$exp.cr.ll<-exp(con4$cum.pred.lower)*con4$cumulated[con4$datesnames==startDate]
+con4$exp.cr.uu<-exp(con4$cum.pred.upper)*con4$cumulated[con4$datesnames==startDate]
+
+con4$expcumpred<-exp(con4$cum.pred)*con4$cumulated[con4$datesnames==startDate]
+con4$expcumresponse[con4$day<=startDate]<-con4$cumulated[con4$day<=startDate]
+# con4$expcumpred[con4$day<startDate]<-con4$cumulated[con4$day<=startDate]
+
+
+# reshape to rows
+bmelt <- con4 %>% select(X,day,expcumresponse,expcumpred)
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+bmelt$type<-as.factor(
+  revalue(
+    as.character(bmelt$type),
+    c(
+      "expcumresponse" = "Observed",
+      "expcumpred" = "Estimated")
+    )
+  )
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(con4$exp.cr.uu,1)  # for log 
+ybrks<-c(head(bmelt$value[bmelt$type=="Observed"],1),
+         mmax1,
+         mmax2)
+obsColor<-rgb(124,228,187,maxColorValue = 255)
+```
+
+
+```{r}
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=round(mmax2,4)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=round(mmax1,4)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  
+  geom_ribbon(data=con4,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title=country,
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(lockdownDate)), linetype="dashed", 
+                color = "grey50", size=0.7)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(lockdownDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(lockdownDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(lockdownDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+p
+
+ggsave(filename = paste(country, "Logcumulated.png"), p, width = 8, height = 4, dpi = 300, units = "in", device='png')
+
+a <- round(con4[length(con4$expcumpred), 25], 3)
+b <- round(con4[length(con4$expcumpred), 23], 3)
+c <- round(con4[length(con4$expcumpred), 24], 3)
+d <- paste(a, " CI: 95%", b, " - ", c, sep = "")
+e <- round(con4[length(con4$expcumpred), 22], 3)
+
+country
+e
+d
+```

@@ -1,0 +1,963 @@
+---
+title: "COVID19 in Midwest: Preliminary Results"
+author: "Esteban Correa"
+date: "April 2, 2020"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "")
+rm(list = ls())
+library(lubridate)
+library(tidyverse)
+library(foreign)
+library(spdep)
+library(RColorBrewer)
+library(reshape)
+library(ggthemes)
+library(grid)
+library(plyr)
+```
+
+# acumulados andres
+
+
+
+```{r}
+ita1<-read.csv("./cumulated_cases/cumulated_2020-03-19_Italy_results_series.csv")
+
+ita2<-read.csv("./Summary/Italy_results.csv")
+ita2<-ita2 %>%
+  select(dates,deaths,recovered,confirmed,cumulated)
+
+
+ita3<-merge(ita1,ita2,by.x="datesnames",by.y="dates")
+
+ita3$day<-ymd(as.character(ita3$datesnames))
+
+lockdownDate<-"2020-03-11"
+startDate<-"2020-03-13"
+
+ita3$expcumresponse<-exp(ita3$cum.response)*ita3$cumulated[ita3$datesnames==lockdownDate]
+ita3$exp.cr.ll<-exp(ita3$cum.pred.lower)*ita3$cumulated[ita3$datesnames==lockdownDate]
+ita3$exp.cr.uu<-exp(ita3$cum.pred.upper)*ita3$cumulated[ita3$datesnames==lockdownDate]
+
+
+
+ita3$expcumresponse<-exp(ita3$cum.response)*ita3$cumulated[ita3$datesnames==lockdownDate]
+ita3$exp.cr.ll<-exp(ita3$cum.pred.lower)*ita3$cumulated[ita3$datesnames==lockdownDate]
+ita3$exp.cr.uu<-exp(ita3$cum.pred.upper)*ita3$cumulated[ita3$datesnames==lockdownDate]
+# se eleva al exponente cum.pred
+ita3$expcumpred<-exp(ita3$cum.pred)*ita3$cumulated[ita3$datesnames==lockdownDate]
+
+
+ita3$expcumresponse[ita3$day<startDate]<-ita3$cumulated[ita3$day<startDate]
+
+ita3$expcumpred[ita3$day<startDate]<-ita3$cumulated[ita3$day<startDate]
+
+# reshape to rows
+bmelt<-ita3 %>%
+  select(X,day,expcumresponse,expcumpred)
+
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+
+
+```
+
+
+
+```{r}
+bmelt$type<-as.factor(revalue(as.character(bmelt$type),
+                               c("expcumresponse" = "Observed",
+                                 "expcumpred" = "Estimated")))
+
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(ita3$exp.cr.uu,1)  # for log 
+ybrks<-c(head(bmelt$value[bmelt$type=="Observed"],1),
+         mmax1,
+         mmax2)
+
+
+
+obsColor<-rgb(124,228,187,maxColorValue = 255)
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=round(mmax2,2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=round(mmax1,2)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  
+  geom_ribbon(data=ita3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Italy",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.7)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_continuous(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3.5, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+p
+ggsave(filename = "ITA3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+
+```
+
+```{r}
+p<-p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=round(mmax2,2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=round(mmax1,2)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  
+  geom_ribbon(data=ita3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Italy",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.7)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3.5, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+p
+# ggdraw(add_sub(p, "lockdown",x = 0.42,y = 1.1))
+ggsave(filename = "ITALog3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+## Malaysia
+
+```{r}
+mys1<-read.csv("../data/andres/COVID19-master/results/cummulated_cases/cumulated_2020-03-23_Malaysia_results_series.csv")
+mys2<-read.csv("../data/andres/COVID19-master/results/Summary/Malaysia_results.csv")
+mys2<-mys2 %>%
+  select(dates,deaths,recovered,confirmed,cumulated)
+
+
+mys3<-merge(mys1,mys2,by.x="datesnames",by.y="dates")
+
+mys3$day<-ymd(as.character(mys3$datesnames))
+
+lockdownDate<-"2020-03-15"
+startDate<-"2020-03-17"
+mys3$expcumresponse<-exp(mys3$cum.response)*mys3$cumulated[mys3$datesnames==lockdownDate]
+mys3$exp.cr.ll<-exp(mys3$cum.pred.lower)*mys3$cumulated[mys3$datesnames==lockdownDate]
+mys3$exp.cr.uu<-exp(mys3$cum.pred.upper)*mys3$cumulated[mys3$datesnames==lockdownDate]
+# se eleva al exponente cum.pred
+mys3$expcumpred<-exp(mys3$cum.pred)*mys3$cumulated[mys3$datesnames==lockdownDate]
+
+
+mys3$expcumresponse[mys3$day<startDate]<-mys3$cumulated[mys3$day<startDate]
+
+mys3$expcumpred[mys3$day<lockdownDate]<-mys3$cumulated[mys3$day<lockdownDate]
+
+# reshape to rows
+bmelt<-mys3 %>%
+  select(X,day,expcumresponse,expcumpred)
+
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+
+```
+
+```{r}
+bmelt$type<-as.factor(revalue(as.character(bmelt$type),
+                               c("expcumresponse" = "Observed",
+                                 "expcumpred" = "Estimated")))
+
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(mys3$exp.cr.uu,1)  # for log 
+ybrks<-c(head(bmelt$value[bmelt$type=="Observed"],1),
+         mmax1,
+         mmax2)
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=mys3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Malaysia",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_continuous(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+4, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+# ggdraw(add_sub(p, "lockdown",x = 0.57,y = 1.1))
+
+ggsave(filename = "MYS3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+```{r}
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=mys3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Malaysia",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+4, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+p
+# ggdraw(add_sub(p, "lockdown",size = 7,x = 0.53,y = 9.1))
+ggsave(filename = "mysLog3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+## Austria
+
+```{r}
+aut1<-read.csv("../data/andres/COVID19-master/results/cummulated_cases/cumulated_2020-03-24_Austria_results_series.csv")
+aut2<-read.csv("../data/andres/COVID19-master/results/Summary/Austria_results.csv")
+aut2<-aut2 %>%
+  select(dates,deaths,recovered,confirmed,cumulated)
+
+
+aut3<-merge(aut1,aut2,by.x="datesnames",by.y="dates")
+
+aut3$day<-ymd(as.character(aut3$datesnames))
+
+lockdownDate<-"2020-03-16"
+startDate<-"2020-03-18"
+aut3$expcumresponse<-exp(aut3$cum.response)*aut3$cumulated[aut3$datesnames==lockdownDate]
+aut3$exp.cr.ll<-exp(aut3$cum.pred.lower)*aut3$cumulated[aut3$datesnames==lockdownDate]
+aut3$exp.cr.uu<-exp(aut3$cum.pred.upper)*aut3$cumulated[aut3$datesnames==lockdownDate]
+# se eleva al exponente cum.pred
+aut3$expcumpred<-exp(aut3$cum.pred)*aut3$cumulated[aut3$datesnames==lockdownDate]
+
+
+aut3$expcumresponse[aut3$day<startDate]<-aut3$cumulated[aut3$day<startDate]
+
+aut3$expcumpred[aut3$day<lockdownDate]<-aut3$cumulated[aut3$day<lockdownDate]
+
+# reshape to rows
+bmelt<-aut3 %>%
+  select(X,day,expcumresponse,expcumpred)
+
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+
+```
+
+```{r}
+bmelt$type<-as.factor(revalue(as.character(bmelt$type),
+                               c("expcumresponse" = "Observed",
+                                 "expcumpred" = "Estimated")))
+
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(aut3$exp.cr.uu,1)  # for log 
+ybrks<-c(head(bmelt$value[bmelt$type=="Observed"],1),
+         mmax1,
+         mmax2)
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  
+  geom_ribbon(data=aut3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Austria",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_continuous(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+# ggdraw(add_sub(p, "lockdown",x = 0.53,y = 1.1))
+
+ggsave(filename = "aut3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+```{r}
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  
+  geom_ribbon(data=aut3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Austria",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+p
+# ggdraw(add_sub(p, "lockdown",size = 7,x = 0.53,y = 9.1))
+ggsave(filename = "autLog3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+
+
+
+## France
+
+```{r}
+fra1<-read.csv("../data/andres/COVID19-master/results/cummulated_cases/cumulated_2020-03-27_France_results_series.csv")
+fra2<-read.csv("../data/andres/COVID19-master/results/Summary/France_results.csv")
+fra2<-fra2 %>%
+  select(dates,deaths,recovered,confirmed,cumulated)
+
+
+fra3<-merge(fra1,fra2,by.x="datesnames",by.y="dates")
+
+fra3$day<-ymd(as.character(fra3$datesnames))
+
+lockdownDate<-"2020-03-19"
+startDate<-"2020-03-21"
+fra3$expcumresponse<-exp(fra3$cum.response)*fra3$cumulated[fra3$datesnames==lockdownDate]
+fra3$exp.cr.ll<-exp(fra3$cum.pred.lower)*fra3$cumulated[fra3$datesnames==lockdownDate]
+fra3$exp.cr.uu<-exp(fra3$cum.pred.upper)*fra3$cumulated[fra3$datesnames==lockdownDate]
+# se eleva al exponente cum.pred
+fra3$expcumpred<-exp(fra3$cum.pred)*fra3$cumulated[fra3$datesnames==lockdownDate]
+
+
+fra3$expcumresponse[fra3$day<startDate]<-fra3$cumulated[fra3$day<startDate]
+
+fra3$expcumpred[fra3$day<lockdownDate]<-fra3$cumulated[fra3$day<lockdownDate]
+
+# reshape to rows
+bmelt<-fra3 %>%
+  select(X,day,expcumresponse,expcumpred)
+
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+
+```
+
+```{r}
+bmelt$type<-as.factor(revalue(as.character(bmelt$type),
+                               c("expcumresponse" = "Observed",
+                                 "expcumpred" = "Estimated")))
+
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(fra3$exp.cr.uu,1)  # for log 
+ybrks<-c(head(bmelt$value[bmelt$type=="Observed"],1),
+         mmax1,
+         mmax2)
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  
+  geom_ribbon(data=fra3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="France",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_continuous(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+p
+ggsave(filename = "fra3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+```{r}
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  
+  geom_ribbon(data=fra3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="France",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+p
+ggsave(filename = "fraLog3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+
+
+## Estonia
+
+```{r}
+est1<-read.csv("../data/andres/COVID19-master/results/cummulated_cases/cumulated_2020-03-28_Estonia_results_series.csv")
+est2<-read.csv("../data/andres/COVID19-master/results/Summary/Estonia_results.csv")
+est2<-est2 %>%
+  select(dates,deaths,recovered,confirmed,cumulated)
+
+
+est3<-merge(est1,est2,by.x="datesnames",by.y="dates")
+
+est3$day<-ymd(as.character(est3$datesnames))
+
+lockdownDate<-"2020-03-20"
+startDate<-"2020-03-22"
+est3$expcumresponse<-exp(est3$cum.response)*est3$cumulated[est3$datesnames==lockdownDate]
+est3$exp.cr.ll<-exp(est3$cum.pred.lower)*est3$cumulated[est3$datesnames==lockdownDate]
+est3$exp.cr.uu<-exp(est3$cum.pred.upper)*est3$cumulated[est3$datesnames==lockdownDate]
+# se eleva al exponente cum.pred
+est3$expcumpred<-exp(est3$cum.pred)*est3$cumulated[est3$datesnames==lockdownDate]
+
+
+est3$expcumresponse[est3$day<startDate]<-est3$cumulated[est3$day<startDate]
+
+est3$expcumpred[est3$day<lockdownDate]<-est3$cumulated[est3$day<lockdownDate]
+
+# reshape to rows
+bmelt<-est3 %>%
+  select(X,day,expcumresponse,expcumpred)
+
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+
+```
+
+```{r}
+bmelt$type<-as.factor(revalue(as.character(bmelt$type),
+                               c("expcumresponse" = "Observed",
+                                 "expcumpred" = "Estimated")))
+
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(est3$exp.cr.uu,1)  # for log 
+ybrks<-c(bmelt$value[bmelt$type=="Observed"][1]+0.01,
+         # mmax1,
+         mmax2
+         )
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=est3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Estonia",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_continuous(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+# ggdraw(add_sub(p, "lockdown",x = 0.53,y = 1.1))
+p
+ggsave(filename = "est3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+```{r}
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=est3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Estonia",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = ybrks,
+                labels=as.character(round(ybrks,2)))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+p
+# ggdraw(add_sub(p, "lockdown",size = 7,x = 0.53,y = 9.1))
+ggsave(filename = "estLog3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+
+
+## South Africa
+
+```{r}
+zaf1<-read.csv("../data/andres/COVID19-master/results/cummulated_cases/cumulated_2020-03-28_South Africa_results_series.csv")
+zaf2<-read.csv("../data/andres/COVID19-master/results/Summary/South Africa_results.csv")
+zaf2<-zaf2 %>%
+  select(dates,deaths,recovered,confirmed,cumulated)
+
+
+zaf3<-merge(zaf1,zaf2,by.x="datesnames",by.y="dates")
+
+zaf3$day<-ymd(as.character(zaf3$datesnames))
+
+lockdownDate<-"2020-03-20"
+startDate<-"2020-03-22"
+zaf3$expcumresponse<-exp(zaf3$cum.response)*zaf3$cumulated[zaf3$datesnames==lockdownDate]
+zaf3$exp.cr.ll<-exp(zaf3$cum.pred.lower)*zaf3$cumulated[zaf3$datesnames==lockdownDate]
+zaf3$exp.cr.uu<-exp(zaf3$cum.pred.upper)*zaf3$cumulated[zaf3$datesnames==lockdownDate]
+# se eleva al exponente cum.pred
+zaf3$expcumpred<-exp(zaf3$cum.pred)*zaf3$cumulated[zaf3$datesnames==lockdownDate]
+
+
+zaf3$expcumresponse[zaf3$day<startDate]<-zaf3$cumulated[zaf3$day<startDate]
+
+zaf3$expcumpred[zaf3$day<lockdownDate]<-zaf3$cumulated[zaf3$day<lockdownDate]
+
+# reshape to rows
+bmelt<-zaf3 %>%
+  select(X,day,expcumresponse,expcumpred)
+
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+
+```
+
+```{r}
+bmelt$type<-as.factor(revalue(as.character(bmelt$type),
+                               c("expcumresponse" = "Observed",
+                                 "expcumpred" = "Estimated")))
+
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(zaf3$exp.cr.uu,1)  # for log 
+ybrks<-c(head(bmelt$value[bmelt$type=="Observed"],1),mmax1,
+         mmax2)
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=zaf3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="South Africa",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_continuous(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+4, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+# ggdraw(add_sub(p, "lockdown",x = 0.53,y = 1.1))
+
+ggsave(filename = "zaf3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+```{r}
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=zaf3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="South Africa",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+4, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+p
+# ggdraw(add_sub(p, "lockdown",size = 7,x = 0.53,y = 9.1))
+ggsave(filename = "zafLog3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+## Belgium
+
+```{r}
+bel1<-read.csv("../data/andres/COVID19-master/results/cummulated_cases/cumulated_2020-03-29_Belgium_results_series.csv")
+bel2<-read.csv("../data/andres/COVID19-master/results/Summary/Belgium_results.csv")
+bel2<-bel2 %>%
+  select(dates,deaths,recovered,confirmed,cumulated)
+
+
+bel3<-merge(bel1,bel2,by.x="datesnames",by.y="dates")
+
+bel3$day<-ymd(as.character(bel3$datesnames))
+
+lockdownDate<-"2020-03-21"
+startDate<-"2020-03-23"
+bel3$expcumresponse<-exp(bel3$cum.response)*bel3$cumulated[bel3$datesnames==lockdownDate]
+bel3$exp.cr.ll<-exp(bel3$cum.pred.lower)*bel3$cumulated[bel3$datesnames==lockdownDate]
+bel3$exp.cr.uu<-exp(bel3$cum.pred.upper)*bel3$cumulated[bel3$datesnames==lockdownDate]
+# se eleva al exponente cum.pred
+bel3$expcumpred<-exp(bel3$cum.pred)*bel3$cumulated[bel3$datesnames==lockdownDate]
+
+
+bel3$expcumresponse[bel3$day<startDate]<-bel3$cumulated[bel3$day<startDate]
+
+bel3$expcumpred[bel3$day<lockdownDate]<-bel3$cumulated[bel3$day<lockdownDate]
+
+# reshape to rows
+bmelt<-bel3 %>%
+  select(X,day,expcumresponse,expcumpred)
+
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+
+```
+
+```{r}
+bmelt$type<-as.factor(revalue(as.character(bmelt$type),
+                               c("expcumresponse" = "Observed",
+                                 "expcumpred" = "Estimated")))
+
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(bel3$exp.cr.uu,1)  # for log 
+ybrks<-c(head(bmelt$value[bmelt$type=="Observed"],1),mmax1,
+         mmax2)
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=bel3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Belgium",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_continuous(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+# ggdraw(add_sub(p, "lockdown",x = 0.53,y = 1.1))
+p
+ggsave(filename = "bel3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+```{r}
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=bel3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="Belgium",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+3, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+p
+# ggdraw(add_sub(p, "lockdown",size = 7,x = 0.53,y = 9.1))
+ggsave(filename = "belLog3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+
+## UK
+
+```{r}
+gbr1<-read.csv("../data/andres/COVID19-master/results/cummulated_cases/cumulated_2020-03-29_United Kingdom_results_series.csv")
+gbr2<-read.csv("../data/andres/COVID19-master/results/Summary/United Kingdom_results.csv")
+gbr2<-gbr2 %>%
+  select(dates,deaths,recovered,confirmed,cumulated)
+
+
+gbr3<-merge(gbr1,gbr2,by.x="datesnames",by.y="dates")
+
+gbr3$day<-ymd(as.character(gbr3$datesnames))
+
+lockdownDate<-"2020-03-21"
+startDate<-"2020-03-23"
+gbr3$expcumresponse<-exp(gbr3$cum.response)*gbr3$cumulated[gbr3$datesnames==lockdownDate]
+gbr3$exp.cr.ll<-exp(gbr3$cum.pred.lower)*gbr3$cumulated[gbr3$datesnames==lockdownDate]
+gbr3$exp.cr.uu<-exp(gbr3$cum.pred.upper)*gbr3$cumulated[gbr3$datesnames==lockdownDate]
+# se eleva al exponente cum.pred
+gbr3$expcumpred<-exp(gbr3$cum.pred)*gbr3$cumulated[gbr3$datesnames==lockdownDate]
+
+
+gbr3$expcumresponse[gbr3$day<startDate]<-gbr3$cumulated[gbr3$day<startDate]
+
+gbr3$expcumpred[gbr3$day<lockdownDate]<-gbr3$cumulated[gbr3$day<lockdownDate]
+
+# reshape to rows
+bmelt<-gbr3 %>%
+  select(X,day,expcumresponse,expcumpred)
+
+bmelt <- melt(bmelt, id=c("X","day"))
+colnames(bmelt)<-c("X","day","type","value")
+
+```
+
+```{r}
+bmelt$type<-as.factor(revalue(as.character(bmelt$type),
+                               c("expcumresponse" = "Observed",
+                                 "expcumpred" = "Estimated")))
+
+mmax1<-tail(bmelt$value[bmelt$type=="Observed"],1)
+mmax2<-tail(bmelt$value[bmelt$type=="Estimated"],1)  # for linear
+mmax3<-tail(gbr3$exp.cr.uu,1)  # for log 
+ybrks<-c(bmelt$value[bmelt$type=="Observed"][4],
+         mmax1,
+         mmax2)
+
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=gbr3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="UK",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_continuous(minor_breaks=ybrks,breaks = round(ybrks,2))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+5.5, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+# ggdraw(add_sub(p, "lockdown",x = 0.53,y = 1.1))
+p
+ggsave(filename = "gbr3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
+
+```{r}
+p<-ggplot(data=bmelt)+
+  geom_line(aes(x=day,y=value,colour=type),size=0.8)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax2)),color="grey50",size=3,alpha=1)+
+  geom_point(aes(x=tail(bmelt,1)$day,y=(mmax1)),color=obsColor,size=3,alpha=1)+
+  scale_color_manual(labels = c("Estimated","Observed"),values = c("grey50",obsColor))+
+  geom_ribbon(data=gbr3,aes(x=day, y=expcumresponse, 
+                            ymin=exp.cr.ll,ymax=exp.cr.uu),
+              alpha=0.1) +
+  labs(title="UK",
+        y ="", x = "",color="")+
+  # vline
+  geom_vline(xintercept = as.numeric(ymd(startDate)), linetype="dashed", 
+                color = "grey50", size=0.4)+
+  # minor grid
+  scale_x_date(minor_breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)])),
+               breaks=c(bmelt$day[1],
+                        (ymd(startDate)),
+                        (bmelt$day[length(bmelt$day)]))
+               )+
+  scale_y_log10(minor_breaks=ybrks,breaks = ybrks,
+                labels=as.character(round(ybrks,2)))+
+  theme(plot.margin = unit(c(1,1,2,1), "cm"),panel.background = NULL)+
+  annotate(geom="text", x=ymd(startDate)+5.5, 
+           y=mmax3, label="lockdown",
+              color="grey50")
+
+p
+# ggdraw(add_sub(p, "lockdown",size = 7,x = 0.53,y = 9.1))
+ggsave(filename = "gbrLog3.png", p,
+       width = 8, height = 4, dpi = 300, units = "in", device='png')
+```
